@@ -1,0 +1,22 @@
+{
+  "name": "github-trending",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "server": "node index.js",
+    "server:weekly": "node weekly.js",
+    "server:monthly": "node monthly.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.8.4",
+    "cheerio": "^1.0.0",
+    "crypto": "^1.0.1",
+    "node-fetch": "^2.6.7",
+    "puppeteer": "^24.7.1",
+    "dotenv": "^16.0.3"
+  }
+}

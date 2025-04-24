@@ -1,0 +1,29 @@
+name: Daily Trending Repos
+
+on:
+  schedule:
+    - cron: '50 0 * * *'  # 每天 UTC 0:50 (北京时间 8:50)
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  trending:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install puppeteer
+          
+      - name: Run trending script
+        run: node index.js
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          BAIDU_APP_ID: ${{ secrets.BAIDU_APP_ID }}
+          BAIDU_SECRET_KEY: ${{ secrets.BAIDU_SECRET_KEY }} 
