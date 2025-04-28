@@ -6,6 +6,30 @@ require("dotenv").config();
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const BAIDU_APP_ID = process.env.BAIDU_APP_ID;
 const BAIDU_SECRET_KEY = process.env.BAIDU_SECRET_KEY;
+const SKIP_HOLIDAYS = process.env.SKIP_HOLIDAYS === 'true'; // 新增环境变量
+
+// 检查是否为节假日
+async function isHoliday() {
+  if (!SKIP_HOLIDAYS) return false;
+  
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const date = `${year}${month}${day}`;
+    
+    // 使用节假日 API
+    const response = await fetch(`https://timor.tech/api/holiday/info/${date}`);
+    const data = await response.json();
+    
+    // 0 工作日, 1 周末, 2 节假日
+    return data.type.type !== 0;
+  } catch (error) {
+    log(`检查节假日失败: ${error.message}`, "error");
+    return false;
+  }
+}
 
 // 日志函数
 function log(message, type = "info") {
@@ -198,4 +222,5 @@ module.exports = {
   translateText,
   getTrendingRepos,
   sendToWechat,
-};
+  isHoliday,
+}; 

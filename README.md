@@ -15,6 +15,7 @@
 WEBHOOK_URL="你的企业微信机器人webhook地址"
 BAIDU_APP_ID="你的百度翻译API App ID"
 BAIDU_SECRET_KEY="你的百度翻译API密钥"
+SKIP_HOLIDAYS="true" # 是否跳过节假日推送 
 ```
 
 ```bash

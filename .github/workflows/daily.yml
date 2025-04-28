@@ -26,4 +26,5 @@ jobs:
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           BAIDU_APP_ID: ${{ secrets.BAIDU_APP_ID }}
-          BAIDU_SECRET_KEY: ${{ secrets.BAIDU_SECRET_KEY }} 
+          BAIDU_SECRET_KEY: ${{ secrets.BAIDU_SECRET_KEY }}
+          SKIP_HOLIDAYS: ${{ secrets.SKIP_HOLIDAYS }} 
