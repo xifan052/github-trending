@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "server": "node index.js",
-    "server:weekly": "node weekly.js",
-    "server:monthly": "node monthly.js"
+    "server": "node src/index.js",
+    "server:weekly": "node src/weekly.js",
+    "server:monthly": "node src/monthly.js"
   },
   "keywords": [],
   "author": "",

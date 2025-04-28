@@ -1,12 +1,13 @@
 const fetch = require("node-fetch");
 const crypto = require("crypto");
 const puppeteer = require("puppeteer");
-require('dotenv').config();
+require("dotenv").config();
 
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const BAIDU_APP_ID = process.env.BAIDU_APP_ID;
 const BAIDU_SECRET_KEY = process.env.BAIDU_SECRET_KEY;
 
+// 日志函数
 function log(message, type = "info") {
   const timestamp = new Date().toLocaleString("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -16,6 +17,7 @@ function log(message, type = "info") {
   console.log(`[${timestamp}] ${prefix} ${message}`);
 }
 
+// 翻译功能
 async function translateText(text) {
   if (!text || text === "No description provided.") {
     return "";
@@ -48,7 +50,8 @@ async function translateText(text) {
   }
 }
 
-async function getTrendingRepos() {
+// 获取 GitHub Trending 数据
+async function getTrendingRepos(since = "daily") {
   log("启动浏览器...");
   const browser = await puppeteer.launch({
     headless: "new",
@@ -74,8 +77,8 @@ async function getTrendingRepos() {
       }
     });
 
-    log("访问GitHub Trending页面...");
-    await page.goto("https://github.com/trending?since=weekly", {
+    log(`访问GitHub Trending页面 (${since})...`);
+    await page.goto(`https://github.com/trending?since=${since}`, {
       waitUntil: "networkidle0",
       timeout: 30000,
     });
@@ -123,12 +126,11 @@ async function getTrendingRepos() {
       const translatedDesc = await translateText(repo.desc);
       formattedRepos.push(`### ${i + 1}. [${repo.title}](${repo.href})
  📊 项目信息
- - ⭐ star数: ${repo.stars} | 新增: ${todayStars}
- - 💻 语言: ${repo.language || "N/A"}
+ - 💻 语言: ${repo.language || "N/A"} | ⭐ star数: ${repo.stars} | 新增: ${todayStars}
  📝 描述
  - ${
    repo.desc !== "No description provided."
-     ? `${repo.desc}\n- ${translatedDesc}`
+     ? `${repo.desc}\n - ${translatedDesc}`
      : "暂无项目描述"
  }
  ---`);
@@ -144,7 +146,8 @@ async function getTrendingRepos() {
   }
 }
 
-async function sendToWechat(text) {
+// 发送到企业微信
+async function sendToWechat(text, title) {
   try {
     log("准备发送消息到企业微信...");
     const now = new Date();
@@ -161,14 +164,14 @@ async function sendToWechat(text) {
     const data = {
       msgtype: "markdown",
       markdown: {
-        content: `# 🌟 GitHub本周热门项目 (${formattedDate})
+        content: `# 🌟 ${title} (${formattedDate})
 
 ${text}
 
-> 数据来源: [GitHub Trending](https://github.com/trending?since=weekly)
+> 数据来源: [GitHub Trending](https://github.com/trending)
 
-[daily](https://github.com/trending?since=daily) | [monthly](https://github.com/trending?since=monthly)`,
-},
+[daily](https://github.com/trending?since=daily) | [weekly](https://github.com/trending?since=weekly) | [monthly](https://github.com/trending?since=monthly)`,
+      },
     };
 
     const response = await fetch(WEBHOOK_URL, {
@@ -190,19 +193,9 @@ ${text}
   }
 }
 
-(async () => {
-  try {
-    log("开始执行GitHub周榜获取任务");
-    const startTime = Date.now();
-
-    const trending = await getTrendingRepos();
-    await sendToWechat(trending);
-
-    const endTime = Date.now();
-    const duration = ((endTime - startTime) / 1000).toFixed(2);
-    log(`任务执行完成，耗时 ${duration} 秒`, "success");
-  } catch (e) {
-    log(`任务执行失败: ${e.message}`, "error");
-    process.exit(1);
-  }
-})();
+module.exports = {
+  log,
+  translateText,
+  getTrendingRepos,
+  sendToWechat,
+};
