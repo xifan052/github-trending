@@ -22,7 +22,7 @@ jobs:
           npm install puppeteer
           
       - name: Run monthly script
-        run: node monthly.js
+        run: npm run server:monthly
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           BAIDU_APP_ID: ${{ secrets.BAIDU_APP_ID }}
