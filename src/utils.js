@@ -205,7 +205,7 @@ ${text}
       },
       body: JSON.stringify(data),
     });
-
+    log("response-->", response)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
