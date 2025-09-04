@@ -2,7 +2,7 @@ name: Daily Trending Repos
 
 on:
   schedule:
-    - cron: '50 23 * * *'
+    - cron: '0 24 * * *'
   workflow_dispatch:  # 支持手动触发
 
 jobs:
