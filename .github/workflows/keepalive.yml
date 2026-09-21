@@ -1,0 +1,32 @@
+name: Keepalive
+
+# GitHub 会在仓库连续 60 天无提交后自动停用所有定时任务
+# 每周检查一次，最近一次提交超过 45 天时推送空提交保活
+on:
+  schedule:
+    - cron: '0 3 * * 1'  # 每周一 UTC 3:00 (北京时间 11:00)
+  workflow_dispatch:  # 支持手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push empty commit if repo is stale
+        run: |
+          LAST_COMMIT_TS=$(git log -1 --format=%ct)
+          AGE_DAYS=$(( ( $(date +%s) - LAST_COMMIT_TS ) / 86400 ))
+          echo "最近一次提交距今 ${AGE_DAYS} 天"
+          if [ "$AGE_DAYS" -ge 45 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "chore: 保活提交，防止定时任务被 GitHub 自动停用"
+            git push
+          else
+            echo "仓库近期有提交，无需保活"
+          fi

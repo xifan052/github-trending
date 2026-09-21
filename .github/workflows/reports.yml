@@ -1,12 +1,22 @@
-name: Daily Trending Repos
+name: Weekly & Monthly Reports
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # UTC 0:00 (北京时间 8:00)
-  workflow_dispatch:  # 支持手动触发(会跳过节假日判断)
+    # 每天触发一次，脚本内判断今天是否为本周/本月最后一个工作日(节假日/调休自动顺延)
+    - cron: '30 9 * * *'  # UTC 9:30 (北京时间 17:30)
+  workflow_dispatch:  # 支持手动触发(会跳过工作日判断)
+    inputs:
+      report:
+        description: '手动推送哪种报表'
+        type: choice
+        options:
+          - both
+          - weekly
+          - monthly
+        default: both
 
 jobs:
-  trending:
+  reports:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,13 +34,20 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Run trending script
-        run: npm run server
+      - name: Run reports
         env:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           BAIDU_APP_ID: ${{ secrets.BAIDU_APP_ID }}
           BAIDU_SECRET_KEY: ${{ secrets.BAIDU_SECRET_KEY }}
           SKIP_HOLIDAYS: ${{ secrets.SKIP_HOLIDAYS }}
+        run: |
+          REPORTS="${{ github.event.inputs.report || 'both' }}"
+          if [ "$REPORTS" = "weekly" ] || [ "$REPORTS" = "both" ]; then
+            npm run server:weekly
+          fi
+          if [ "$REPORTS" = "monthly" ] || [ "$REPORTS" = "both" ]; then
+            npm run server:monthly
+          fi
 
       - name: Notify failure
         if: failure()
