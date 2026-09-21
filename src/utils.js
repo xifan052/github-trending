@@ -11,21 +11,14 @@ const SKIP_HOLIDAYS = process.env.SKIP_HOLIDAYS === "true";
 // 企微 markdown 消息单条上限 4096 字节(utf-8)
 // 官方文档: https://developer.work.weixin.qq.com/document/path/91712
 const WECHAT_MARKDOWN_MAX_BYTES = 4096;
+// 内容超长时项目描述的截断长度(字符数)，截断版可让 10 个项目稳定装进单条
+const DESC_MAX_CHARS = { en: 100, zh: 50 };
 
 // ---------- 通用工具 ----------
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function byteLength(str) {
   return Buffer.byteLength(str, "utf8");
-}
-
-function truncateUtf8(str, maxBytes) {
-  let out = "";
-  for (const ch of str) {
-    if (byteLength(out + ch) > maxBytes) break;
-    out += ch;
-  }
-  return out;
 }
 
 // 日志函数
@@ -321,34 +314,54 @@ async function getTrendingRepos(since = "daily") {
 
   const translatedDescs = await translateBatch(repos.map((r) => r.desc));
 
-  // 翻译失败时只发英文描述，避免留下空的" - "孤行
-  const formattedRepos = repos.map((repo, i) => {
+  // 返回渲染所需的原始数据，超长降级(截断描述)在发送侧做
+  return repos.map((repo, i) => {
     const todayStars = repo.todayStars.match(/[\d,]+/)[0] || "0";
-    const desc =
-      repo.desc === "No description provided."
-        ? "暂无项目描述"
-        : [repo.desc, translatedDescs[i]].filter(Boolean).join("\n - ");
-    return `### ${i + 1}. [${repo.title}](https://github.com/${repo.title})
- 📊 项目信息
- - 💻 语言: ${repo.language || "N/A"} | ⭐ star数: ${repo.stars} | 新增: ${todayStars}
- 📝 描述
- - ${desc}
- ---`;
+    return {
+      title: repo.title,
+      url: `https://github.com/${repo.title}`,
+      meta: [
+        repo.language && `💻 ${repo.language}`,
+        `⭐ ${repo.stars}`,
+        `🔥 +${todayStars}`,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+      descEn: repo.desc === "No description provided." ? "" : repo.desc,
+      descZh: translatedDescs[i] || "",
+    };
   });
-  return formattedRepos;
 }
 
 // ---------- 企业微信 ----------
+// 描述超长截断:英文在单词边界断开，中文直接按字符
+function ellipsis(text, maxChars) {
+  if (!text || text.length <= maxChars) return text;
+  return text.slice(0, maxChars).replace(/\s+\S*$/, "") + "...";
+}
+
+// 项目块:标题链接、元信息、中英描述各一行;descLimit 未传时不截断
+function renderBlocks(repos, descLimit) {
+  return repos.map((repo, i) => {
+    const descs = [repo.descEn, repo.descZh]
+      .map((text, idx) =>
+        descLimit ? ellipsis(text, idx === 0 ? descLimit.en : descLimit.zh) : text
+      )
+      .filter(Boolean);
+    return [
+      `### ${i + 1}. [${repo.title}](${repo.url})`,
+      repo.meta,
+      ...(descs.length > 0 ? descs : ["暂无描述"]),
+    ].join("\n");
+  });
+}
+
 // 把项目块分组，保证每组不超过 budget 字节
 function splitBlocks(blocks, budget) {
   const groups = [];
   let cur = [];
   let curBytes = 0;
-  for (let block of blocks) {
-    if (byteLength(block) > budget) {
-      log(`单个项目内容超过 ${budget} 字节，已截断`, "info");
-      block = truncateUtf8(block, budget);
-    }
+  for (const block of blocks) {
     const blockBytes = byteLength(block);
     if (curBytes + blockBytes > budget && cur.length > 0) {
       groups.push(cur);
@@ -362,9 +375,9 @@ function splitBlocks(blocks, budget) {
   return groups;
 }
 
-// 发送到企业微信:先精确算单条总字节，能装下就一条发出；
-// 超长才按项目块分条，分组预留页眉页脚和"第 x/n 部分"标注的字节余量
-async function sendToWechat(blocks, title) {
+// 发送到企业微信:完整内容能装下就单条;超长先截断项目描述再试;
+// 仍超长(极端情况)才按项目块分条，分组预留页眉页脚和"第 x/n 部分"标注余量
+async function sendToWechat(repos, title) {
   try {
     log("准备发送消息到企业微信...");
     const now = new Date();
@@ -379,27 +392,38 @@ async function sendToWechat(blocks, title) {
     });
 
     const header = (label) => `# 🌟 ${title} (${formattedDate})${label}\n\n`;
-    const footer = "\n---\n> 数据来源: [GitHub Trending](https://github.com/trending)";
+    const footer =
+      "\n\n> 数据来源: [GitHub Trending](https://github.com/trending)";
+    const asSingle = (blocks) => `${header("")}${blocks.join("\n\n")}${footer}`;
 
-    const single = `${header("")}${blocks.join("\n---\n")}${footer}`;
-    if (byteLength(single) > WECHAT_MARKDOWN_MAX_BYTES) {
-      const overhead =
-        byteLength(header(" 第99/99部分")) + byteLength(footer) + 64;
-      const groups = splitBlocks(blocks, WECHAT_MARKDOWN_MAX_BYTES - overhead);
-      for (let i = 0; i < groups.length; i++) {
-        const label = ` 第${i + 1}/${groups.length}部分`;
-        await postWechat(
-          `${header(label)}${groups[i].join("\n---\n")}${footer}`
-        );
-        if (i < groups.length - 1) {
-          await sleep(1000); // 企微机器人有频率限制，分条间隔 1 秒
-        }
-      }
-      log(`内容超长，已分 ${groups.length} 条发送成功`, "success");
-    } else {
-      await postWechat(single);
-      log("消息发送成功", "success");
+    let blocks = renderBlocks(repos);
+    let truncated = false;
+    if (byteLength(asSingle(blocks)) > WECHAT_MARKDOWN_MAX_BYTES) {
+      blocks = renderBlocks(repos, DESC_MAX_CHARS);
+      truncated = true;
     }
+
+    const single = asSingle(blocks);
+    if (byteLength(single) <= WECHAT_MARKDOWN_MAX_BYTES) {
+      await postWechat(single);
+      log(
+        `消息发送成功${truncated ? "(描述超长已截断)" : ""}`,
+        "success"
+      );
+      return;
+    }
+
+    const overhead =
+      byteLength(header(" 第99/99部分")) + byteLength(footer) + 64;
+    const groups = splitBlocks(blocks, WECHAT_MARKDOWN_MAX_BYTES - overhead);
+    for (let i = 0; i < groups.length; i++) {
+      const label = ` 第${i + 1}/${groups.length}部分`;
+      await postWechat(`${header(label)}${groups[i].join("\n\n")}${footer}`);
+      if (i < groups.length - 1) {
+        await sleep(1000); // 企微机器人有频率限制，分条间隔 1 秒
+      }
+    }
+    log(`内容超长，已分 ${groups.length} 条发送成功`, "success");
   } catch (error) {
     log(`发送消息失败: ${error.message}`, "error");
     throw error;

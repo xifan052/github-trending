@@ -83,7 +83,7 @@ test("parseTrendingHtml 解析 trending 页面结构", async () => {
   assert.deepEqual(u.parseTrendingHtml("<html></html>"), []);
 });
 
-test("splitBlocks 分组与超限截断", async () => {
+test("splitBlocks 按 budget 分组", async () => {
   const u = await utilsReady;
   const big = "x".repeat(3000);
   const groups = u.splitBlocks([big, big, big, big], 3600);
@@ -91,8 +91,6 @@ test("splitBlocks 分组与超限截断", async () => {
   assert.ok(
     groups.every((g) => Buffer.byteLength(g.join(""), "utf8") <= 3600)
   );
-  const truncated = u.splitBlocks(["y".repeat(5000)], 3600);
-  assert.ok(Buffer.byteLength(truncated[0][0], "utf8") <= 3600);
   assert.equal(u.splitBlocks(["a", "b"], 3600).length, 1);
 });
 
@@ -112,40 +110,57 @@ test("工作日/节假日判断(holiday-cn 2026 公告)", async () => {
   assert.equal(await u.isLastWorkdayOfWeek(at("2026-10-02")), false); // 国庆周五
 });
 
-test("sendToWechat 单条能装下时不分条", async () => {
+// 构造 getTrendingRepos 返回结构的项目数据
+const mkRepos = (n, enLen, zhLen = 0) =>
+  Array.from({ length: n }, (_, i) => ({
+    title: `owner${i}/repo${i}`,
+    url: `https://github.com/owner${i}/repo${i}`,
+    meta: `💻 TypeScript | ⭐ ${(i + 1) * 111},234 | 🔥 +${i * 13}`,
+    descEn: "E".repeat(enLen),
+    descZh: "译".repeat(zhLen),
+  }));
+
+test("sendToWechat 单条能装下时不分条、不截断", async () => {
   const u = await utilsReady;
   received.length = 0;
-  const blocks = Array.from(
-    { length: 10 },
-    (_, i) => `### ${i + 1}. repo${i}\n${"S".repeat(300)}`
-  );
-  await u.sendToWechat(blocks, "单条测试");
+  const repos = mkRepos(10, 150, 40);
+  repos[9] = { ...repos[9], descEn: "", descZh: "" };
+  await u.sendToWechat(repos, "单条测试");
   assert.equal(received.length, 1);
-  assert.doesNotMatch(received[0].markdown.content, /第\d+\/\d+部分/);
-  assert.ok(Buffer.byteLength(received[0].markdown.content, "utf8") <= 4096);
+  const content = received[0].markdown.content;
+  assert.doesNotMatch(content, /第\d+\/\d+部分/);
+  assert.ok(!content.includes("..."));
+  assert.ok(content.includes("暂无描述"));
+  assert.ok(Buffer.byteLength(content, "utf8") <= 4096);
 });
 
-test("sendToWechat 超长内容自动分条且单条不超 4096 字节", async () => {
+test("sendToWechat 完整内容超长时截断描述后仍单条发送", async () => {
   const u = await utilsReady;
   received.length = 0;
-  const big = "B".repeat(2200);
-  const blocks = Array.from(
-    { length: 10 },
-    (_, i) => `### ${i + 1}. repo${i}\n${big}`
-  );
-  await u.sendToWechat(blocks, "分条测试");
-  assert.equal(received.length, 10);
+  await u.sendToWechat(mkRepos(10, 600, 200), "截断测试");
+  assert.equal(received.length, 1);
+  const content = received[0].markdown.content;
+  assert.ok(content.includes("..."));
+  assert.doesNotMatch(content, /第\d+\/\d+部分/);
+  assert.ok(Buffer.byteLength(content, "utf8") <= 4096);
+});
+
+test("sendToWechat 截断后仍超长才分条且单条不超 4096 字节", async () => {
+  const u = await utilsReady;
+  received.length = 0;
+  await u.sendToWechat(mkRepos(20, 600, 200), "分条测试");
+  assert.ok(received.length > 1);
   for (const msg of received) {
     assert.ok(Buffer.byteLength(msg.markdown.content, "utf8") <= 4096);
   }
-  assert.match(received[0].markdown.content, /第1\/10部分/);
-  assert.match(received[9].markdown.content, /第10\/10部分/);
+  assert.match(received[0].markdown.content, /第1\/\d+部分/);
 });
 
 test("sendToWechat 识别企微 errcode 错误(HTTP 200)", async () => {
   const u = await utilsReady;
+  const repos = [{ ...mkRepos(1, 5)[0], descEn: "__FAIL__" }];
   await assert.rejects(
-    () => u.sendToWechat(["### 1. __FAIL__"], "失败测试"),
+    () => u.sendToWechat(repos, "失败测试"),
     /errcode=40058/
   );
 });
